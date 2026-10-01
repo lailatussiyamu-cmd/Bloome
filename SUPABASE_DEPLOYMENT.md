@@ -11,3 +11,7 @@ Before deployment, public schema table query returned zero rows. Both migrations
 These migrations were executed manually, not through CLI migration tracking. Do not rerun them or run `supabase db push` blindly against this project. Reconcile CLI migration history with the two applied versions before future CLI deployments.
 
 This installs the database only. App environment configuration, email authentication verification, Edge Function deployment, OpenAI secrets, and native health/GPS integrations remain separate steps.
+
+## Pending — 2 Oktober 2026
+
+`20261002000000_tz_rebase_and_dedupe.sql` belum diterapkan ke project ini. Jalankan file itu saja di SQL Editor (aman dijalankan ulang: `create or replace` dan `create index if not exists`), lalu tambahkan baris di atas.

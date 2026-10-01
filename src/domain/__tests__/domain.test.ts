@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCareMoment, initialBloomState, stageForCareDays, toPublicBloom, STAGES, stageRank } from '../bloom';
+import { applyCareMoment, initialBloomState, rebaseForTimeZone, stageForCareDays, toPublicBloom, STAGES, stageRank } from '../bloom';
 import { autoCareMoments, isDuplicate, localDateIn } from '../careMoment';
 import { comebackIntensity, isComeback, isRestingTime, planForMode } from '../dayMode';
 import { canRegister, checkWeightTarget, evaluateSafety, hasDistressSignal, hasRapidLoss, minSafeTargetKg } from '../safety';
@@ -172,5 +172,16 @@ describe('safety', () => {
     expect(hasDistressSignal('makan siang enak banget')).toBe(false);
     const s = evaluateSafety({ recentTexts: ['aku benci badanku'], weights: [], today: '2026-10-01', verySmallPortionsInLast7Days: 0 });
     expect(s).toEqual({ pauseNudges: true, offerProfessionalHelp: true });
+  });
+});
+
+describe('time zone rebase', () => {
+  it('moves the last care day forward only, never back', () => {
+    const s = { ...initialBloomState('2026-09-30'), careDaysTotal: 1, lastCareDay: '2026-09-30', stage: 'sprout' as const };
+    const east = rebaseForTimeZone(s, '2026-10-01T02:00:00Z', (at) => localDateIn('Pacific/Kiritimati', at));
+    expect(east).toMatchObject({ lastCareDay: '2026-10-01', careDaysTotal: 1, stage: 'sprout' });
+    const west = rebaseForTimeZone(east, '2026-10-01T02:00:00Z', (at) => localDateIn('Pacific/Pago_Pago', at));
+    expect(west.lastCareDay).toBe('2026-10-01');
+    expect(rebaseForTimeZone(initialBloomState('2026-10-01'), null, () => '2030-01-01').lastCareDay).toBeNull();
   });
 });

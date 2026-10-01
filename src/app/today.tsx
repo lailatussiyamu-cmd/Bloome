@@ -29,7 +29,7 @@ export default function Today() {
     useCallback(() => {
       let active = true;
       (async () => {
-        const [open, p, b, notes, care] = await Promise.all([api.appOpen(), api.getProfile(), api.getBloom(), api.recentNotes(), api.todayCare()]);
+        const [open, p, b, safety, care] = await Promise.all([api.appOpen(), api.getProfile(), api.getBloom(), api.safetyInputs(), api.todayCare()]);
         if (!active) return;
         if (!p || !b) { router.replace('/'); return; }
         setError('');
@@ -39,7 +39,12 @@ export default function Today() {
         setBloom(b);
         setMode(open.dayMode ?? 'standard');
         setNight(Boolean(open.night));
-        setPaused(evaluateSafety({ recentTexts: notes, weights: [], today: open.today ?? '', verySmallPortionsInLast7Days: 0 }).pauseNudges);
+        setPaused(evaluateSafety({
+          recentTexts: safety.recentNotes,
+          weights: safety.weights,
+          today: open.today ?? '',
+          verySmallPortionsInLast7Days: safety.verySmallPortionsInLast7Days,
+        }).pauseNudges);
       })().catch(() => { if (active) setError('Data belum dapat dimuat. Periksa koneksi lalu buka kembali halaman ini.'); });
       return () => { active = false; };
     }, [api]),
