@@ -10,7 +10,7 @@ Status per 2 Oktober 2026. ✅ = sudah di kode dan teruji otomatis. ☐ = harus 
 - ✅ Ekspor data dan hapus akun di dalam app (wajib App Store & Google Play).
 - ✅ Build rilis menolak berjalan tanpa Supabase; Android backup dimatikan untuk data kesehatan.
 - ✅ Sesi berakhir → kembali ke halaman masuk.
-- ✅ CI GitHub Actions: typecheck, lint, 88 tes di setiap PR.
+- ✅ CI GitHub Actions: typecheck, lint, 90 tes di setiap PR.
 
 ## Harus kamu lakukan sebelum rilis
 - ☐ Jalankan migrasi `20261002010000_production_readiness.sql` dan deploy dua Edge Function (lihat SUPABASE_DEPLOYMENT.md).

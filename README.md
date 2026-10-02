@@ -39,7 +39,7 @@ bukan untuk data kesehatan pengguna sungguhan.
 ## Tes
 
 ```bash
-npm test -- --pool=threads   # 88 tes
+npm test -- --pool=threads   # 90 tes
 npm run typecheck
 ```
 
