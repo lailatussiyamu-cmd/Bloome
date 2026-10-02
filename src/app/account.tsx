@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Share } from 'react-native';
+import { exportAccountData } from '../lib/exportAccountData';
 import { Body, Button, Card, Field, Label, Screen, Title } from '../components/ui';
 import { DELETE_CONFIRMATION } from '../../supabase/functions/_shared/accountPolicy.ts';
 import { useApi } from '../lib/BloomeContext';
@@ -10,6 +10,8 @@ export default function Account() {
   const api = useApi();
   const online = api.kind === 'supabase';
   const [aiConsent, setAiConsent] = useState<boolean | null>(null);
+  const [consentError, setConsentError] = useState(false);
+  const [consentAttempt, setConsentAttempt] = useState(0);
   const [busy, setBusy] = useState<'' | 'export' | 'consent' | 'signout' | 'delete'>('');
   const [msg, setMsg] = useState('');
   const [confirming, setConfirming] = useState(false);
@@ -17,9 +19,9 @@ export default function Account() {
 
   useEffect(() => {
     let active = true;
-    api.hasConsent('ai').then(c => { if (active) setAiConsent(c); }).catch(() => { if (active) setAiConsent(null); });
+    api.hasConsent('ai').then(c => { if (active) setAiConsent(c); }).catch(() => { if (active) setConsentError(true); });
     return () => { active = false; };
-  }, [api]);
+  }, [api, consentAttempt]);
 
   const run = async (kind: typeof busy, fn: () => Promise<void>, failure: string) => {
     if (busy) return;
@@ -29,11 +31,12 @@ export default function Account() {
 
   const exportData = () => run('export', async () => {
     const json = await api.exportData();
-    await Share.share({ title: 'Data Bloome-ku', message: json });
+    await exportAccountData(json);
   }, 'Data belum dapat diekspor. Periksa koneksi lalu coba lagi.');
 
   const revokeAi = () => run('consent', async () => {
     setAiConsent(await api.setConsent('ai', false));
+    setConsentError(false);
     setMsg('Izin AI sudah dicabut. Pesan tidak akan dikirim ke AI sampai kamu menyetujuinya lagi.');
   }, 'Izin belum dapat diubah. Coba lagi.');
 
@@ -61,8 +64,9 @@ export default function Account() {
       {online && (
         <Card>
           <Label>Pendamping AI</Label>
-          <Body>{aiConsent ? 'Kamu mengizinkan pesan di Ruang cerita dikirim ke penyedia AI.' : 'Pesan tidak dikirim ke penyedia AI.'}</Body>
-          {aiConsent && <Button variant="ghost" title={busy === 'consent' ? 'Menyimpan…' : 'Cabut izin AI'} disabled={!!busy} onPress={revokeAi} />}
+          <Body>{aiConsent === null ? (consentError ? 'Status izin AI belum dapat diperiksa. Izin sebelumnya mungkin masih aktif.' : 'Memeriksa izin AI…') : aiConsent ? 'Kamu mengizinkan pesan di Ruang cerita dikirim ke penyedia AI.' : 'Pesan tidak dikirim ke penyedia AI.'}</Body>
+          {consentError && <Button variant="ghost" title="Periksa ulang izin" disabled={!!busy} onPress={() => { setAiConsent(null); setConsentError(false); setConsentAttempt(n => n + 1); }} />}
+          {(aiConsent === true || consentError) && <Button variant="ghost" title={busy === 'consent' ? 'Menyimpan…' : 'Cabut izin AI'} disabled={!!busy} onPress={revokeAi} />}
         </Card>
       )}
 
