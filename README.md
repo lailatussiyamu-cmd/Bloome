@@ -13,6 +13,7 @@ Semua aturan mengikuti dokumen **Bloome v0.1 — Logika & Aturan Produk**.
 | `src/components/LivingBloom.tsx` | Komponen Living Bloom berbasis state (`stage`, `mode`, `interactionState`, `variant`) |
 | `src/app/` | Layar (Expo Router): onboarding, pilih mode hari, hari ini, check-in, momen selesai, tonggak, perjalanan, mode kembali, dukungan |
 | `src/lib/api.ts` | Satu antarmuka data, dua mesin: Supabase, atau mode demo di HP |
+| `supabase/functions/` | Edge Functions: `bloome-assistant` (AI) dan `delete-account`; kode bersama di `_shared/` |
 
 ## Menjalankan
 
@@ -38,7 +39,7 @@ bukan untuk data kesehatan pengguna sungguhan.
 ## Tes
 
 ```bash
-npm test -- --pool=threads   # 73 tes
+npm test -- --pool=threads   # 88 tes
 npm run typecheck
 ```
 

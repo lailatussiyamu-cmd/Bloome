@@ -12,6 +12,11 @@ These migrations were executed manually, not through CLI migration tracking. Do 
 
 This installs the database only. App environment configuration, email authentication verification, Edge Function deployment, OpenAI secrets, and native health/GPS integrations remain separate steps.
 
-## Pending — 2 Oktober 2026
+## 2 Oktober 2026
 
-`20261002000000_tz_rebase_and_dedupe.sql` belum diterapkan ke project ini. Jalankan file itu saja di SQL Editor (aman dijalankan ulang: `create or replace` dan `create index if not exists`), lalu tambahkan baris di atas.
+- `20261002000000_tz_rebase_and_dedupe.sql` — diterapkan lewat SQL Editor.
+
+## Pending
+
+1. `20261002010000_production_readiness.sql` — jalankan di SQL Editor **sebelum** memakai versi app yang baru (app baru memanggil `submit_check_in`, `has_consent`, `export_my_data`). Jalankan sekali saja: file ini membuat fungsi baru dengan `create function`, jadi menjalankan ulang akan gagal tanpa mengubah apa pun.
+2. Deploy Edge Functions: `supabase functions deploy bloome-assistant` dan `supabase functions deploy delete-account`. `delete-account` memakai `SUPABASE_SERVICE_ROLE_KEY` yang otomatis tersedia di Edge Functions; jangan pernah menaruh kunci itu di app atau `.env`.

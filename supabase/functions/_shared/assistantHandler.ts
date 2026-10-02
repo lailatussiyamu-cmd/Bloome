@@ -1,4 +1,4 @@
-import { ASSISTANT_INSTRUCTIONS, MAX_HISTORY, MAX_MESSAGE, URGENT_REPLY, urgentSignal, type ChatMessage } from '../src/domain/assistant.ts';
+import { ASSISTANT_INSTRUCTIONS, MAX_HISTORY, MAX_MESSAGE, URGENT_REPLY, urgentSignal, type ChatMessage } from './assistantPolicy.ts';
 
 export interface AssistantConfig { supabaseUrl: string; anonKey: string; openaiKey: string; model: string }
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -43,7 +43,6 @@ export function createAssistantHandler(config: AssistantConfig, fetcher: Fetch =
     try {
       const bytes = new Uint8Array(total); let at = 0; for (const c of chunks) { bytes.set(c, at); at += c.length; }
       const body = JSON.parse(new TextDecoder().decode(bytes));
-      if (body.consent !== true) return json(400, { error: 'consent_required' });
       messages = parseMessages(body.messages);
     } catch { return json(400, { error: 'invalid_messages' }); }
     const signal = AbortSignal.timeout(35000);
@@ -58,7 +57,12 @@ export function createAssistantHandler(config: AssistantConfig, fetcher: Fetch =
       if (!profileResponse.ok) return json(503, { error: 'assistant_unavailable' });
       const profiles = await profileResponse.json() as { user_id: string }[];
       if (!profiles.some(p => p.user_id === user.id)) return json(403, { error: 'onboarding_required' });
+      // Safety guidance never needs consent: nothing is sent to the AI provider.
       if (urgentSignal(messages[messages.length - 1].content)) return json(200, URGENT_REPLY);
+      // Consent is read from the database, not trusted from the request body.
+      const consent = await fetcher(config.supabaseUrl + '/rest/v1/rpc/has_consent', { method: 'POST', headers: supabaseHeaders, body: JSON.stringify({ p_kind: 'ai' }), signal });
+      if (!consent.ok) return json(503, { error: 'assistant_unavailable' });
+      if (await consent.json() !== true) return json(403, { error: 'consent_required' });
       if (!config.openaiKey || !config.model) return json(503, { error: 'assistant_not_configured' });
       const quota = await fetcher(config.supabaseUrl + '/rest/v1/rpc/consume_ai_request', { method: 'POST', headers: supabaseHeaders, body: '{}', signal });
       if (!quota.ok) return json(503, { error: 'assistant_unavailable' });

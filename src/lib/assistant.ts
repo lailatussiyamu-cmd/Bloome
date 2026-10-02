@@ -9,9 +9,9 @@ export async function askAssistant(messages: ChatMessage[], signal: AbortSignal)
   const response = await fetch(process.env.EXPO_PUBLIC_SUPABASE_URL + '/functions/v1/bloome-assistant', {
     method: 'POST', signal,
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + data.session.access_token, apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY! },
-    body: JSON.stringify({ consent: true, messages: messages.slice(-MAX_HISTORY) }),
+    body: JSON.stringify({ messages: messages.slice(-MAX_HISTORY) }),
   });
-  if (!response.ok) throw new Error(response.status === 429 ? 'Batas percakapan sementara tercapai. Coba lagi nanti; panduan lokal tetap tersedia.' : response.status === 401 ? 'Sesi berakhir. Silakan masuk kembali.' : 'AI belum dapat menjawab. Coba lagi sebentar atau gunakan panduan lokal.');
+  if (!response.ok) throw new Error(response.status === 429 ? 'Batas percakapan sementara tercapai. Coba lagi nanti; panduan lokal tetap tersedia.' : response.status === 401 ? 'Sesi berakhir. Silakan masuk kembali.' : response.status === 403 ? 'Izin percakapan AI belum aktif. Setujui izin di atas terlebih dahulu.' : 'AI belum dapat menjawab. Coba lagi sebentar atau gunakan panduan lokal.');
   const reply = await response.json() as AssistantReply;
   if (typeof reply.text !== 'string' || !reply.text.trim() || !['ai', 'support'].includes(reply.kind)) throw new Error('Jawaban belum tersedia. Silakan coba lagi.');
   return reply;

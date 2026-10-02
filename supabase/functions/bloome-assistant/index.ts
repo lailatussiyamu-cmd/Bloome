@@ -1,4 +1,4 @@
-import { createAssistantHandler } from '../../../server/assistant.ts';
+import { createAssistantHandler } from '../_shared/assistantHandler.ts';
 
 Deno.serve(createAssistantHandler({
   supabaseUrl: Deno.env.get('SUPABASE_URL') ?? '',

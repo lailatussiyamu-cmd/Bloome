@@ -68,12 +68,12 @@ export default function Today() {
     if (busy) return;
     setBusy(true);
     try {
-      await api.chooseRest();
+      // One server call: rest and the Recover moment are saved together.
+      const r = await api.chooseRest();
       setRestChosen(true);
-      const r = await api.recordCareMoment('recover');
       setDone(d => ({ ...d, recover: true }));
-      if (r.recorded) router.push({ pathname: '/care-done', params: { pillar: 'recover', milestone: r.milestone ?? '' } });
-    } catch { setError('Pilihan istirahat atau momen belum tersimpan seluruhnya. Coba buka kembali halaman ini.'); }
+      if (r.recorded) router.push({ pathname: '/care-done', params: { pillar: 'recover', milestone: r.stageAdvanced && r.milestone ? r.milestone : '' } });
+    } catch { setError('Pilihan istirahat belum tersimpan. Periksa koneksi lalu coba lagi.'); }
     finally { setBusy(false); }
   };
 
@@ -108,6 +108,7 @@ export default function Today() {
         <Pressable accessibilityRole="button" accessibilityState={{disabled:busy||restChosen}} disabled={busy||restChosen} onPress={chooseRest} style={{flex:1,padding:18,borderRadius:22,backgroundColor:'#DAD9C3',gap:11}}><Icon name="recover" color="#485C49"/><Text style={{fontSize:14,color:'#283D30'}}>Ruang untuk jeda</Text><Text style={{fontSize:11,color:'#556451'}}>{restChosen?'Istirahat dipilih. Cukup.':'Aku memilih istirahat  ↗'}</Text></Pressable>
       </View>
       <View style={{alignItems:'center',paddingVertical:6}}><Text style={{color:'#AEB39F',fontSize:11}}>Langkah kecil. Dengan penuh perhatian.</Text></View>
+      <Button variant="ghost" title="Akun & privasi" onPress={()=>router.push('/account')} />
     </Screen>
   );
 }

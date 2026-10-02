@@ -22,7 +22,22 @@ export default function Assistant() {
   const pending = useRef<AbortController | null>(null);
   const scroll = useRef<ScrollView>(null);
   const online = api.kind === 'supabase';
-  useEffect(() => { let mounted = true; api.getBloom().then(b => { if (mounted && b) setStage(b.stage); }).catch(() => {}); return () => { mounted = false; pending.current?.abort(); }; }, [api]);
+  const [consentBusy, setConsentBusy] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    api.getBloom().then(b => { if (mounted && b) setStage(b.stage); }).catch(() => {});
+    // Consent lives in the database, so it survives closing the screen and can be revoked in Akun & privasi.
+    if (api.kind === 'supabase') api.hasConsent('ai').then(c => { if (mounted) setConsent(c); }).catch(() => {});
+    return () => { mounted = false; pending.current?.abort(); };
+  }, [api]);
+
+  async function grantConsent() {
+    if (consentBusy) return;
+    setConsentBusy(true); setError('');
+    try { setConsent(await api.setConsent('ai', true)); }
+    catch { setError('Izin belum tersimpan. Periksa koneksi lalu coba lagi.'); }
+    finally { setConsentBusy(false); }
+  }
 
   async function send() {
     const text = draft.trim();
@@ -50,7 +65,7 @@ export default function Assistant() {
       <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })} contentContainerStyle={{ gap: 14, paddingBottom: 12 }}>
         <Body>Kamu boleh datang apa adanya. Apa yang terasa berat hari ini?</Body>
         <Body muted>AI dapat keliru dan tidak menggantikan tenaga kesehatan. Percakapan tidak mengubah Bloom atau rencana harimu.</Body>
-        {online && !consent && <Card><Body>Untuk berbicara dengan AI, pesanmu dikirim melalui server Bloome ke OpenAI. Riwayat di layar hanya disimpan selama halaman ini terbuka. Kebijakan penyimpanan penyedia tetap berlaku. Hindari menyertakan data identitas.</Body><Button title="Setuju, gunakan AI" onPress={() => setConsent(true)} /><Button variant="ghost" title="Gunakan panduan lokal" onPress={() => setError('Panduan lokal tersedia di bawah tanpa mengirim pesan ke AI.')} /></Card>}
+        {online && !consent && <Card><Body>Untuk berbicara dengan AI, pesanmu dikirim melalui server Bloome ke OpenAI. Riwayat di layar hanya disimpan selama halaman ini terbuka. Kebijakan penyimpanan penyedia tetap berlaku. Hindari menyertakan data identitas.</Body><Body muted>Izin ini bisa kamu cabut kapan saja di Akun & privasi.</Body><Button title={consentBusy ? 'Menyimpan…' : 'Setuju, gunakan AI'} disabled={consentBusy} onPress={grantConsent} /><Button variant="ghost" title="Gunakan panduan lokal" onPress={() => setError('Panduan lokal tersedia di bawah tanpa mengirim pesan ke AI.')} /></Card>}
         <Label>Panduan lokal</Label>
         {LOCAL_GUIDES.map(g => <Button key={g.title} variant="ghost" title={g.title} disabled={busy} onPress={() => { setMessages(m => [...m, { role: 'assistant', content: g.text, label: 'Panduan lokal' }]); setError(''); }} />)}
         {messages.map((m, i) => <View key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '94%', borderRadius: 20, padding: 17, gap: 7, backgroundColor: m.role === 'user' ? colors.accent : colors.surface }}><Text style={{ color: m.role === 'user' ? '#DED9CA' : colors.muted, fontSize: 11 }}>{m.role === 'user' ? 'Kamu' : m.label}</Text><Text selectable style={{ color: m.role === 'user' ? colors.onAccent : colors.ink, fontSize: 15, lineHeight: 23 }}>{m.content}</Text></View>)}
@@ -60,7 +75,7 @@ export default function Assistant() {
       </ScrollView>
       <TextInput accessibilityLabel="Pesan untuk Bloome" placeholder="Ceritakan yang kamu rasakan…" placeholderTextColor={colors.muted} multiline maxLength={MAX_MESSAGE} value={draft} onChangeText={setDraft} editable={!busy} style={{ minHeight: 54, maxHeight: 110, borderRadius: 20, padding: 15, backgroundColor: colors.surface, color: colors.ink, fontSize: 15 }} />
       <Button title={busy ? 'Menunggu jawaban…' : 'Kirim'} disabled={busy || !draft.trim()} onPress={send} />
-      <View style={{ flexDirection: 'row', gap: 8 }}><View style={{ flex: 1 }}><Button variant="ghost" title="Hapus obrolan" disabled={busy} onPress={() => { setMessages([]); setDraft(''); setError(''); setUrgent(false); setConsent(false); }} /></View><View style={{ flex: 1 }}><Button variant="ghost" title="Dukungan" onPress={() => router.push('/support')} /></View></View>
+      <View style={{ flexDirection: 'row', gap: 8 }}><View style={{ flex: 1 }}><Button variant="ghost" title="Hapus obrolan" disabled={busy} onPress={() => { setMessages([]); setDraft(''); setError(''); setUrgent(false); }} /></View><View style={{ flex: 1 }}><Button variant="ghost" title="Dukungan" onPress={() => router.push('/support')} /></View></View>
     </KeyboardAvoidingView>
   </Screen>;
 }

@@ -13,6 +13,7 @@ import { isComeback, type DayMode } from '../domain/dayMode';
 import { canRegister, type WeightEntry } from '../domain/safety';
 import { effectiveGoal, type OnboardingAnswers } from '../domain/onboarding';
 import { getSupabase } from './supabase';
+import { DELETE_CONFIRMATION } from '../../supabase/functions/_shared/accountPolicy.ts';
 
 export interface Profile extends OnboardingAnswers {
   nickname: string;
@@ -54,6 +55,14 @@ export interface SafetyInputs {
   weights: WeightEntry[];
 }
 
+export interface CheckInResult {
+  recordedPillars: Pillar[];
+  stageAdvanced: boolean;
+  milestone: BloomStage | null;
+}
+
+export type ConsentKind = 'ai' | 'health' | 'cycle' | 'location';
+
 const DAY_MS = 86_400_000;
 
 /** Everything the screens need. Two implementations: Supabase, and a local demo store. */
@@ -66,10 +75,19 @@ export interface BloomeApi {
   recordCareMoment(pillar: Pillar, source?: CareSource): Promise<CareResult>;
   setDayMode(mode: DayMode): Promise<void>;
   ackMilestone(): Promise<void>;
-  saveCheckIn(c: CheckInInput): Promise<void>;
+  /** Saves the check-in, lightens a hard day, and records its Care Moments in one step. */
+  submitCheckIn(c: CheckInInput, opts: { recordMoments: boolean }): Promise<CheckInResult>;
   safetyInputs(): Promise<SafetyInputs>;
   todayCare(): Promise<{ pillars: Pillar[]; resting: boolean }>;
-  chooseRest(): Promise<void>;
+  /** Marks today as rest and records the Recover moment in one step. */
+  chooseRest(): Promise<CareResult>;
+  hasConsent(kind: ConsentKind): Promise<boolean>;
+  setConsent(kind: ConsentKind, granted: boolean): Promise<boolean>;
+  /** Everything stored about the user, as pretty JSON. */
+  exportData(): Promise<string>;
+  /** Permanently deletes the account and all data. */
+  deleteAccount(confirm: string): Promise<void>;
+  signOut(): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +102,7 @@ interface LocalDb {
   restDays?: Record<string, boolean>;
   checkIns: (CheckInInput & { at: string })[];
   weights?: WeightEntry[];
+  consents?: Partial<Record<ConsentKind, boolean>>;
 }
 
 const KEY = 'bloome.local.v1';
@@ -137,18 +156,9 @@ const localImplementation: BloomeApi = {
   },
   async recordCareMoment(pillar, source = 'manual') {
     const db = await load();
-    if (!db.profile || !db.bloom) throw new Error('onboarding_required');
-    const createdAt = new Date().toISOString();
-    const moment: CareMoment = { pillar, source, createdAt, localDate: localDateIn(db.profile.timeZone) };
-    // Check every moment, not just the latest few: late-synced moments must match the SQL rule.
-    if (isDuplicate(moment, db.moments)) {
-      return { recorded: false, duplicate: true, stage: db.bloom.stage, stageAdvanced: false, milestone: db.bloom.pendingMilestone };
-    }
-    db.moments.push(moment);
-    const r = applyCareMoment(db.bloom, moment.localDate);
-    db.bloom = r.state;
+    const r = recordInto(db, pillar, source, new Date());
     await save(db);
-    return { recorded: true, duplicate: false, stage: r.state.stage, stageAdvanced: r.stageAdvanced, milestone: r.state.pendingMilestone };
+    return r;
   },
   async setDayMode(mode) {
     const db = await load();
@@ -161,11 +171,28 @@ const localImplementation: BloomeApi = {
     if (db.bloom) db.bloom = { ...db.bloom, pendingMilestone: null };
     await save(db);
   },
-  async saveCheckIn(c) {
+  async submitCheckIn(c, { recordMoments }) {
     const db = await load();
-    db.checkIns.push({ ...c, at: new Date().toISOString() });
+    if (!db.profile || !db.bloom) throw new Error('onboarding_required');
+    const now = new Date();
+    const today = localDateIn(db.profile.timeZone, now);
+    db.checkIns.push({ ...c, note: c.note?.trim() || undefined, at: now.toISOString() });
     db.checkIns = db.checkIns.slice(-60);
+    if (c.hardDay) db.dayModes[today] = 'minimum';
+    const result: CheckInResult = { recordedPillars: [], stageAdvanced: false, milestone: null };
+    if (recordMoments) {
+      const pillars: Pillar[] = [];
+      if (c.portion) pillars.push('nourish');
+      if ((c.waterGlasses ?? 0) > 0) pillars.push('hydrate');
+      if (c.mood) pillars.push('mind');
+      for (const pillar of pillars) {
+        const r = recordInto(db, pillar, 'manual', now);
+        if (r.recorded) result.recordedPillars.push(pillar);
+        if (r.stageAdvanced) { result.stageAdvanced = true; result.milestone = r.milestone; }
+      }
+    }
     await save(db);
+    return result;
   },
   async safetyInputs() {
     const db = await load();
@@ -185,10 +212,49 @@ const localImplementation: BloomeApi = {
   async chooseRest() {
     const db = await load();
     if (!db.profile) throw new Error('onboarding_required');
-    db.restDays = { ...db.restDays, [localDateIn(db.profile.timeZone)]: true };
+    const now = new Date();
+    db.restDays = { ...db.restDays, [localDateIn(db.profile.timeZone, now)]: true };
+    const r = recordInto(db, 'recover', 'manual', now);
     await save(db);
+    return r;
+  },
+  async hasConsent(kind) {
+    return !!(await load()).consents?.[kind];
+  },
+  async setConsent(kind, granted) {
+    const db = await load();
+    db.consents = { ...db.consents, [kind]: granted };
+    await save(db);
+    return granted;
+  },
+  async exportData() {
+    const db = await load();
+    const { bloom, ...rest } = db;
+    const publicBloom = bloom ? { stage: bloom.stage, stageReachedAt: bloom.stageReachedAt } : null;
+    return JSON.stringify({ exportedAt: new Date().toISOString(), mode: 'demo', ...rest, bloom: publicBloom }, null, 2);
+  },
+  async deleteAccount(confirm) {
+    if (confirm !== DELETE_CONFIRMATION) throw new Error('confirmation_required');
+    await AsyncStorage.removeItem(KEY);
+  },
+  async signOut() {
+    // Demo mode has no account.
   },
 };
+
+/** Shared by every local write that records a Care Moment. Mutates `db`; the caller saves. */
+function recordInto(db: LocalDb, pillar: Pillar, source: CareSource, now: Date): CareResult {
+  if (!db.profile || !db.bloom) throw new Error('onboarding_required');
+  const moment: CareMoment = { pillar, source, createdAt: now.toISOString(), localDate: localDateIn(db.profile.timeZone, now) };
+  // Check every moment, not just the latest few: late-synced moments must match the SQL rule.
+  if (isDuplicate(moment, db.moments)) {
+    return { recorded: false, duplicate: true, stage: db.bloom.stage, stageAdvanced: false, milestone: db.bloom.pendingMilestone };
+  }
+  db.moments.push(moment);
+  const r = applyCareMoment(db.bloom, moment.localDate);
+  db.bloom = r.state;
+  return { recorded: true, duplicate: false, stage: r.state.stage, stageAdvanced: r.stageAdvanced, milestone: r.state.pendingMilestone };
+}
 
 // Serialize local writes so concurrent acts of care cannot overwrite each other.
 let writes: Promise<unknown> = Promise.resolve();
@@ -205,8 +271,10 @@ export const localApi: BloomeApi = {
   recordCareMoment: queued(localImplementation.recordCareMoment),
   setDayMode: queued(localImplementation.setDayMode),
   ackMilestone: queued(localImplementation.ackMilestone),
-  saveCheckIn: queued(localImplementation.saveCheckIn),
+  submitCheckIn: queued(localImplementation.submitCheckIn),
   chooseRest: queued(localImplementation.chooseRest),
+  setConsent: queued(localImplementation.setConsent),
+  deleteAccount: queued(localImplementation.deleteAccount),
 };
 
 // ---------------------------------------------------------------------------
@@ -218,10 +286,14 @@ function sb() {
   return client;
 }
 
-async function userId(): Promise<string> {
-  const { data } = await sb().auth.getUser();
-  if (!data.user) throw new Error('not_signed_in');
-  return data.user.id;
+function toCareResult(d: Record<string, unknown>): CareResult {
+  return {
+    recorded: Boolean(d.recorded),
+    duplicate: Boolean(d.duplicate),
+    stage: d.stage as BloomStage,
+    stageAdvanced: Boolean(d.stage_advanced),
+    milestone: (d.milestone as BloomStage | null) ?? null,
+  };
 }
 
 export const supabaseApi: BloomeApi = {
@@ -284,14 +356,7 @@ export const supabaseApi: BloomeApi = {
   async recordCareMoment(pillar, source = 'manual') {
     const { data, error } = await sb().rpc('record_care_moment', { p_pillar: pillar, p_source: source });
     if (error) throw error;
-    const d = data as Record<string, unknown>;
-    return {
-      recorded: Boolean(d.recorded),
-      duplicate: Boolean(d.duplicate),
-      stage: d.stage as BloomStage,
-      stageAdvanced: Boolean(d.stage_advanced),
-      milestone: (d.milestone as BloomStage | null) ?? null,
-    };
+    return toCareResult(data as Record<string, unknown>);
   },
   async setDayMode(mode) {
     const { error } = await sb().rpc('set_day_mode', { p_mode: mode });
@@ -301,17 +366,25 @@ export const supabaseApi: BloomeApi = {
     const { error } = await sb().rpc('ack_milestone');
     if (error) throw error;
   },
-  async saveCheckIn(c) {
-    const { error } = await sb().from('check_ins').insert({
-      user_id: await userId(),
-      portion: c.portion,
-      mood: c.mood,
-      eating_reason: c.eatingReason,
-      water_glasses: c.waterGlasses,
-      hard_day: c.hardDay,
-      note: c.note,
+  async submitCheckIn(c, { recordMoments }) {
+    const { data, error } = await sb().rpc('submit_check_in', {
+      p: {
+        portion: c.portion ?? null,
+        mood: c.mood ?? null,
+        eating_reason: c.eatingReason ?? null,
+        water_glasses: c.waterGlasses ?? null,
+        hard_day: c.hardDay,
+        note: c.note ?? null,
+        record_moments: recordMoments,
+      },
     });
     if (error) throw error;
+    const d = data as Record<string, unknown>;
+    return {
+      recordedPillars: (d.recorded_pillars as Pillar[]) ?? [],
+      stageAdvanced: Boolean(d.stage_advanced),
+      milestone: (d.milestone as BloomStage | null) ?? null,
+    };
   },
   async safetyInputs() {
     const weekAgo = new Date(Date.now() - 7 * DAY_MS).toISOString();
@@ -343,7 +416,34 @@ export const supabaseApi: BloomeApi = {
     return { pillars: [...new Set((care.data ?? []).map(m => m.pillar as Pillar))], resting: !!plan.data?.resting };
   },
   async chooseRest() {
-    const { error } = await sb().rpc('choose_rest');
+    const { data, error } = await sb().rpc('choose_rest');
+    if (error) throw error;
+    return toCareResult(data as Record<string, unknown>);
+  },
+  async hasConsent(kind) {
+    const { data, error } = await sb().rpc('has_consent', { p_kind: kind });
+    if (error) throw error;
+    return data === true;
+  },
+  async setConsent(kind, granted) {
+    const { data, error } = await sb().rpc('set_consent', { p_kind: kind, p_granted: granted });
+    if (error) throw error;
+    return data === true;
+  },
+  async exportData() {
+    const { data, error } = await sb().rpc('export_my_data');
+    if (error) throw error;
+    return JSON.stringify(data, null, 2);
+  },
+  async deleteAccount(confirm) {
+    if (confirm !== DELETE_CONFIRMATION) throw new Error('confirmation_required');
+    const { error } = await sb().functions.invoke('delete-account', { body: { confirm } });
+    if (error) throw new Error('delete_failed');
+    // The account is gone on the server; drop the local session too.
+    await sb().auth.signOut({ scope: 'local' });
+  },
+  async signOut() {
+    const { error } = await sb().auth.signOut();
     if (error) throw error;
   },
 };

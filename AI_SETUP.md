@@ -9,8 +9,9 @@ Kode aplikasi dan fungsi server sudah tersedia. Layanan AI belum diaktifkan pada
 3. Di Supabase Dashboard → Edge Functions → Secrets, masukkan `OPENAI_API_KEY` dan `OPENAI_MODEL=gpt-5-mini`. Model dapat diganti dengan model Responses yang mendukung konfigurasi reasoning pada handler.
 4. Deploy dari folder aplikasi: `supabase functions deploy bloome-assistant`. Pertahankan pemeriksaan JWT. Handler juga memverifikasi token ke Auth dan memastikan profil onboarding tersedia.
 5. Jalankan ulang Expo setelah mengubah `.env`, masuk dengan akun dewasa yang sudah onboarding, buka Asisten dan setujui pengiriman pesan.
+6. Izin AI tersimpan di tabel `consents` dan diperiksa oleh server (`has_consent`), bukan dari isi request. User bisa mencabutnya di **Akun & privasi**.
 
-Kode fungsi berada di `supabase/functions/bloome-assistant/index.ts`, dengan handler di `server/assistant.ts`. Deployment harus menyertakan impor relatif handler dan domain tersebut.
+Kode fungsi berada di `supabase/functions/bloome-assistant/index.ts`. Handler dan aturan Asisten ada di `supabase/functions/_shared/` (pola resmi Supabase untuk kode bersama), dan app mengimpor aturan yang sama lewat `src/domain/assistant.ts`.
 
 ## Perilaku
 

@@ -4,7 +4,6 @@ import { View } from 'react-native';
 import { Body, Button, Choice, Field, Label, Screen, Title } from '../components/ui';
 import { hasDistressSignal } from '../domain/safety';
 import type { CheckInInput } from '../lib/api';
-import type { Pillar } from '../domain/careMoment';
 import { useApi } from '../lib/BloomeContext';
 
 type Portion = NonNullable<CheckInInput['portion']>;
@@ -31,25 +30,17 @@ export default function CheckIn() {
     if (busy) return;
     setBusy(true); setError('');
     try {
-    await api.saveCheckIn({ portion, mood, eatingReason: reason, waterGlasses: water, hardDay, note: note.trim() || undefined });
-    if (hardDay) await api.setDayMode('minimum');
-    if (note && hasDistressSignal(note)) return router.replace('/support');
-
-    // Each filled part is a Care Moment; the Bloom counts the day once either way.
-    let lastPillar: Pillar | null = null;
-    let milestone = '';
-    const pillars: Pillar[] = [];
-    if (portion) pillars.push('nourish');
-    if (water > 0) pillars.push('hydrate');
-    if (mood) pillars.push('mind');
-    for (const pillar of pillars) {
-      const result = await api.recordCareMoment(pillar);
-      if (result.recorded) lastPillar = pillar;
-      milestone = result.milestone ?? milestone;
-    }
-    if (!lastPillar) return router.replace('/today');
-    router.replace({ pathname: '/care-done', params: { pillar: lastPillar, milestone } });
-    } catch { setError('Check-in belum tersimpan seluruhnya. Coba lagi; momen yang sama tidak dihitung dua kali dalam 30 menit.'); }
+      const distress = !!note && hasDistressSignal(note);
+      // One server call: the check-in, a lighter day, and its Care Moments are saved together or not at all.
+      const result = await api.submitCheckIn(
+        { portion, mood, eatingReason: reason, waterGlasses: water, hardDay, note: note.trim() || undefined },
+        { recordMoments: !distress },
+      );
+      if (distress) return router.replace('/support');
+      const lastPillar = result.recordedPillars[result.recordedPillars.length - 1];
+      if (!lastPillar) return router.replace('/today');
+      router.replace({ pathname: '/care-done', params: { pillar: lastPillar, milestone: result.stageAdvanced && result.milestone ? result.milestone : '' } });
+    } catch { setError('Check-in belum tersimpan. Periksa koneksi lalu coba lagi.'); }
     finally { setBusy(false); }
   };
 

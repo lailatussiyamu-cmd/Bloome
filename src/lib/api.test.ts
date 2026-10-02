@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { localApi, resolveApiMode, type Profile } from './api';
 import { canRegister, isValidDate } from '../domain/safety';
 const memory = vi.hoisted(() => new Map<string, string>());
-vi.mock('@react-native-async-storage/async-storage', () => ({ default: { getItem: async (key: string) => memory.get(key) ?? null, setItem: async (key: string, value: string) => { memory.set(key, value); } } }));
+vi.mock('@react-native-async-storage/async-storage', () => ({ default: { getItem: async (key: string) => memory.get(key) ?? null, setItem: async (key: string, value: string) => { memory.set(key, value); }, removeItem: async (key: string) => { memory.delete(key); } } }));
 vi.mock('./supabase', () => ({ getSupabase: () => null }));
 const profile: Profile = { nickname: 'Demo', birthDate: '1990-01-01', timeZone: 'Asia/Jakarta', goal: 'energy', pregnantOrBreastfeeding: false, activity: 'none', frequency: 'rarely', wakeTime: '06:00', shiftWork: false };
 beforeEach(() => { memory.clear(); vi.useRealTimers(); });
@@ -10,7 +10,7 @@ describe('persisted care', () => {
   it('serializes concurrent writes and persists care and rest across reads', async () => {
     await localApi.completeOnboarding(profile);
     await Promise.all([localApi.recordCareMoment('hydrate'), localApi.recordCareMoment('mind'), localApi.chooseRest(), localApi.setDayMode('minimum')]);
-    expect(await localApi.todayCare()).toEqual({ pillars: ['hydrate', 'mind'], resting: true });
+    expect(await localApi.todayCare()).toEqual({ pillars: ['hydrate', 'mind', 'recover'], resting: true });
     expect((await localApi.appOpen()).dayMode).toBe('minimum');
     expect((await localApi.getBloom())?.stage).toBe('sprout');
   });
@@ -47,8 +47,8 @@ describe('time zone change in demo mode', () => {
 describe('safety inputs', () => {
   it('counts very small portions in the last 7 days and keeps recent notes', async () => {
     await localApi.completeOnboarding(profile);
-    for (let i = 0; i < 4; i++) await localApi.saveCheckIn({ portion: 'very_small', hardDay: false });
-    await localApi.saveCheckIn({ portion: 'medium', hardDay: false, note: 'capek' });
+    for (let i = 0; i < 4; i++) await localApi.submitCheckIn({ portion: 'very_small', hardDay: false }, { recordMoments: true });
+    await localApi.submitCheckIn({ portion: 'medium', hardDay: false, note: 'capek' }, { recordMoments: true });
     expect(await localApi.safetyInputs()).toEqual({ recentNotes: ['capek'], verySmallPortionsInLast7Days: 4, weights: [] });
   });
 });
@@ -60,5 +60,26 @@ describe('api mode', () => {
     expect(resolveApiMode({ hasSupabase: false, isDev: false, demoFlag: '1' })).toBe('local');
     expect(resolveApiMode({ hasSupabase: false, isDev: false, demoFlag: undefined })).toBe('misconfigured');
     expect(resolveApiMode({ hasSupabase: false, isDev: false, demoFlag: 'true' })).toBe('misconfigured');
+  });
+});
+
+describe('privacy controls in demo mode', () => {
+  it('check-in is one step: hard day lightens the plan and moments count once', async () => {
+    await localApi.completeOnboarding(profile);
+    const r = await localApi.submitCheckIn({ portion: 'small', mood: 'calm', waterGlasses: 1, hardDay: true }, { recordMoments: true });
+    expect(r).toEqual({ recordedPillars: ['nourish', 'hydrate', 'mind'], stageAdvanced: true, milestone: 'sprout' });
+    expect((await localApi.appOpen()).dayMode).toBe('minimum');
+    expect(await localApi.submitCheckIn({ mood: 'tired', hardDay: false }, { recordMoments: false })).toEqual({ recordedPillars: [], stageAdvanced: false, milestone: null });
+  });
+  it('exports without the internal counter, and deletes everything only with the typed word', async () => {
+    await localApi.completeOnboarding(profile); await localApi.recordCareMoment('hydrate');
+    await localApi.setConsent('ai', true);
+    expect(await localApi.hasConsent('ai')).toBe(true);
+    const exported = await localApi.exportData();
+    expect(exported).toContain('"hydrate"'); expect(exported).not.toContain('careDaysTotal');
+    await expect(localApi.deleteAccount('hapus')).rejects.toThrow('confirmation_required');
+    expect((await localApi.appOpen()).onboarded).toBe(true);
+    await localApi.deleteAccount('HAPUS');
+    expect((await localApi.appOpen()).onboarded).toBe(false);
   });
 });
