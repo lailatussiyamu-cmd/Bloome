@@ -22,9 +22,25 @@ export function createDeleteAccountHandler(config: DeleteAccountConfig, fetcher:
 
     let body: { confirm?: unknown };
     try {
-      const text = await req.text();
-      if (text.length > 1000) return json(413, { error: 'request_too_large' });
-      body = JSON.parse(text);
+      const reader = req.body?.getReader();
+      if (!reader) return json(400, { error: 'invalid_request' });
+      const bytes = new Uint8Array(1000);
+      let length = 0;
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          if (length + chunk.value.byteLength > bytes.length) {
+            await reader.cancel();
+            return json(413, { error: 'request_too_large' });
+          }
+          bytes.set(chunk.value, length);
+          length += chunk.value.byteLength;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      body = JSON.parse(new TextDecoder().decode(bytes.subarray(0, length)));
     } catch { return json(400, { error: 'invalid_request' }); }
     if (body?.confirm !== DELETE_CONFIRMATION) return json(400, { error: 'confirmation_required' });
 

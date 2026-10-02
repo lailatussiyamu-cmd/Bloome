@@ -48,7 +48,7 @@ export default function Account() {
   const deleteAccount = () => run('delete', async () => {
     await api.deleteAccount(typed.trim());
     router.replace(online ? '/sign-in' : '/');
-  }, 'Akun belum terhapus. Tidak ada data yang berubah. Periksa koneksi lalu coba lagi.');
+  }, 'Status penghapusan belum dapat dipastikan. Permintaan mungkin sudah diproses. Periksa koneksi dan coba masuk kembali untuk memeriksa akunmu.');
 
   return (
     <Screen>

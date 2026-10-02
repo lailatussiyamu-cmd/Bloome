@@ -34,3 +34,32 @@ describe('delete-account', () => {
     expect((await createDeleteAccountHandler(config, mock({ del: 404 }))(req({ confirm: 'HAPUS' }))).status).toBe(200);
   });
 });
+
+it('stops oversized chunked bodies before calling authentication or deletion', async () => {
+  const f = mock();
+  const cancel = vi.fn();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array(700));
+      controller.enqueue(new Uint8Array(400));
+    },
+    cancel,
+  });
+  const request = new Request('https://fn.test', {
+    method: 'POST', headers: { Authorization: 'Bearer user-token' }, body: stream,
+    duplex: 'half',
+  } as RequestInit);
+  const result = await createDeleteAccountHandler(config, f)(request);
+  expect(result.status).toBe(413);
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(f).not.toHaveBeenCalled();
+});
+
+it('measures request limits in bytes and rejects malformed JSON without upstream calls', async () => {
+  const f = mock();
+  const handler = createDeleteAccountHandler(config, f);
+  expect((await handler(req({ confirm: 'HAPUS', extra: '🌿'.repeat(300) }))).status).toBe(413);
+  const malformed = new Request('https://fn.test', { method: 'POST', headers: { Authorization: 'Bearer user-token' }, body: '{' });
+  expect((await handler(malformed)).status).toBe(400);
+  expect(f).not.toHaveBeenCalled();
+});
