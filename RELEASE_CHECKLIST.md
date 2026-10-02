@@ -10,10 +10,10 @@ Status per 2 Oktober 2026. ✅ = sudah di kode dan teruji otomatis. ☐ = harus 
 - ✅ Ekspor data dan hapus akun di dalam app (wajib App Store & Google Play).
 - ✅ Build rilis menolak berjalan tanpa Supabase; Android backup dimatikan untuk data kesehatan.
 - ✅ Sesi berakhir → kembali ke halaman masuk.
-- ✅ CI GitHub Actions: typecheck, lint, 90 tes di setiap PR.
+- ✅ CI GitHub Actions: typecheck, lint, 93 tes di setiap PR.
 
 ## Harus kamu lakukan sebelum rilis
-- ☐ Jalankan migrasi `20261002010000_production_readiness.sql` dan deploy dua Edge Function (lihat SUPABASE_DEPLOYMENT.md).
+- ✅ Migrasi readiness dan kedua Edge Function telah diterapkan; AI masih menunggu API key dan uji sesi nyata (lihat SUPABASE_DEPLOYMENT.md).
 - ☐ Konfirmasi ID aplikasi `com.lailatussiyamu.bloome` di `app.json`. **Tidak bisa diganti** setelah upload pertama ke store.
 - ☐ Ganti warna latar ikon Android (`#E6F4FE`, bawaan Expo) dengan warna brand, lalu cek ikon di HP.
 - ☐ Uji di HP Android dan iPhone sungguhan: onboarding, OTP email, check-in, istirahat, mode hari, milestone, AI, ekspor, hapus akun, layar besar/teks besar, screen reader.
@@ -29,3 +29,4 @@ Status per 2 Oktober 2026. ✅ = sudah di kode dan teruji otomatis. ☐ = harus 
 - Pemantauan error (mis. Sentry) supaya crash di HP pengguna terlihat.
 - Simpan sesi login di penyimpanan terenkripsi (expo-secure-store) alih-alih AsyncStorage.
 - RPC `today_snapshot()` agar layar Today cukup satu permintaan (sekarang lima).
+
