@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   applyCareMoment,
   initialBloomState,
+  rebaseForTimeZone,
   toPublicBloom,
   type BloomStage,
   type BloomState,
@@ -9,7 +10,7 @@ import {
 } from '../domain/bloom';
 import { isDuplicate, localDateIn, type CareMoment, type CareSource, type Pillar } from '../domain/careMoment';
 import { isComeback, type DayMode } from '../domain/dayMode';
-import { canRegister } from '../domain/safety';
+import { canRegister, type WeightEntry } from '../domain/safety';
 import { effectiveGoal, type OnboardingAnswers } from '../domain/onboarding';
 import { getSupabase } from './supabase';
 
@@ -46,6 +47,15 @@ export interface CheckInInput {
   note?: string;
 }
 
+/** Raw inputs for evaluateSafety(); the rules themselves live in src/domain/safety.ts. */
+export interface SafetyInputs {
+  recentNotes: string[];
+  verySmallPortionsInLast7Days: number;
+  weights: WeightEntry[];
+}
+
+const DAY_MS = 86_400_000;
+
 /** Everything the screens need. Two implementations: Supabase, and a local demo store. */
 export interface BloomeApi {
   kind: 'supabase' | 'local';
@@ -57,7 +67,7 @@ export interface BloomeApi {
   setDayMode(mode: DayMode): Promise<void>;
   ackMilestone(): Promise<void>;
   saveCheckIn(c: CheckInInput): Promise<void>;
-  recentNotes(): Promise<string[]>;
+  safetyInputs(): Promise<SafetyInputs>;
   todayCare(): Promise<{ pillars: Pillar[]; resting: boolean }>;
   chooseRest(): Promise<void>;
 }
@@ -73,6 +83,7 @@ interface LocalDb {
   dayModes: Record<string, DayMode>;
   restDays?: Record<string, boolean>;
   checkIns: (CheckInInput & { at: string })[];
+  weights?: WeightEntry[];
 }
 
 const KEY = 'bloome.local.v1';
@@ -109,6 +120,10 @@ const localImplementation: BloomeApi = {
     const today = localDateIn(p.timeZone);
     if (!canRegister(p.birthDate, today)) throw new Error('under_18');
     const db = await load();
+    if (db.bloom && db.profile && db.profile.timeZone !== p.timeZone) {
+      const latest = db.moments.reduce<string | null>((max, m) => (max === null || m.createdAt > max ? m.createdAt : max), null);
+      db.bloom = rebaseForTimeZone(db.bloom, latest, (at) => localDateIn(p.timeZone, at));
+    }
     db.profile = { ...p, goal: effectiveGoal(p) };
     db.bloom = db.bloom ?? initialBloomState(today);
     await save(db);
@@ -125,7 +140,8 @@ const localImplementation: BloomeApi = {
     if (!db.profile || !db.bloom) throw new Error('onboarding_required');
     const createdAt = new Date().toISOString();
     const moment: CareMoment = { pillar, source, createdAt, localDate: localDateIn(db.profile.timeZone) };
-    if (isDuplicate(moment, db.moments.slice(-20))) {
+    // Check every moment, not just the latest few: late-synced moments must match the SQL rule.
+    if (isDuplicate(moment, db.moments)) {
       return { recorded: false, duplicate: true, stage: db.bloom.stage, stageAdvanced: false, milestone: db.bloom.pendingMilestone };
     }
     db.moments.push(moment);
@@ -151,9 +167,14 @@ const localImplementation: BloomeApi = {
     db.checkIns = db.checkIns.slice(-60);
     await save(db);
   },
-  async recentNotes() {
+  async safetyInputs() {
     const db = await load();
-    return db.checkIns.filter(c => Date.parse(c.at) >= Date.now() - 7 * 86400000).slice(-14).map((c) => c.note ?? '').filter(Boolean);
+    const week = db.checkIns.filter(c => Date.parse(c.at) >= Date.now() - 7 * DAY_MS);
+    return {
+      recentNotes: week.slice(-14).map((c) => c.note ?? '').filter(Boolean),
+      verySmallPortionsInLast7Days: week.filter(c => c.portion === 'very_small').length,
+      weights: db.weights ?? [],
+    };
   },
   async todayCare() {
     const db = await load();
@@ -292,10 +313,22 @@ export const supabaseApi: BloomeApi = {
     });
     if (error) throw error;
   },
-  async recentNotes() {
-    const { data, error } = await sb().from('check_ins').select('note').gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString()).order('created_at', { ascending: false }).limit(14);
-    if (error) throw error;
-    return (data ?? []).map((r) => r.note as string | null).filter((n): n is string => Boolean(n));
+  async safetyInputs() {
+    const weekAgo = new Date(Date.now() - 7 * DAY_MS).toISOString();
+    // hasRapidLoss() looks back 14 days and needs the entry at or before that cutoff.
+    const weightsSince = new Date(Date.now() - 28 * DAY_MS).toISOString().slice(0, 10);
+    const [checks, weights] = await Promise.all([
+      sb().from('check_ins').select('note, portion').gte('created_at', weekAgo).order('created_at', { ascending: false }).limit(200),
+      sb().from('weight_entries').select('date, kg').gte('date', weightsSince).order('date', { ascending: true }),
+    ]);
+    if (checks.error) throw checks.error;
+    if (weights.error) throw weights.error;
+    const rows = checks.data ?? [];
+    return {
+      recentNotes: rows.slice(0, 14).map((r) => r.note as string | null).filter((n): n is string => Boolean(n)),
+      verySmallPortionsInLast7Days: rows.filter((r) => r.portion === 'very_small').length,
+      weights: (weights.data ?? []).map((w) => ({ date: String(w.date), kg: Number(w.kg) })),
+    };
   },
   async todayCare() {
     const profile = await supabaseApi.getProfile();
@@ -315,6 +348,25 @@ export const supabaseApi: BloomeApi = {
   },
 };
 
-export function pickApi(): BloomeApi {
-  return getSupabase() ? supabaseApi : localApi;
+export type ApiMode = 'supabase' | 'local' | 'misconfigured';
+
+/**
+ * Demo mode keeps health data unencrypted on the phone, so it must never switch on by
+ * accident. Without Supabase settings, a release build refuses to start instead of
+ * silently storing real users' data locally. Demo mode is allowed in development, or
+ * when EXPO_PUBLIC_DEMO_MODE=1 is set on purpose.
+ */
+export function resolveApiMode(o: { hasSupabase: boolean; isDev: boolean; demoFlag: string | undefined }): ApiMode {
+  if (o.hasSupabase) return 'supabase';
+  if (o.isDev || o.demoFlag === '1') return 'local';
+  return 'misconfigured';
+}
+
+export function pickApi(): BloomeApi | null {
+  const mode = resolveApiMode({
+    hasSupabase: getSupabase() !== null,
+    isDev: typeof __DEV__ !== 'undefined' && __DEV__,
+    demoFlag: process.env.EXPO_PUBLIC_DEMO_MODE,
+  });
+  return mode === 'supabase' ? supabaseApi : mode === 'local' ? localApi : null;
 }

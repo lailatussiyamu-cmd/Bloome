@@ -38,7 +38,7 @@ bukan untuk data kesehatan pengguna sungguhan.
 ## Tes
 
 ```bash
-npm test -- --pool=threads   # 53 tes
+npm test -- --pool=threads   # 73 tes
 npm run typecheck
 ```
 
@@ -49,6 +49,8 @@ Tes database memastikan antara lain:
 - Tanggal dihitung dengan zona waktu user (23.30 WIB tetap hari yang sama).
 - Mode kembali muncul setelah 4 hari tanpa Care Moment.
 - Pendaftar di bawah 18 tahun ditolak; tujuan turun berat mati saat hamil/menyusui.
+- Ganti zona waktu tidak bisa menambah hari peduli ekstra.
+- Aturan di TypeScript (mode demo) dan SQL (produksi) memberi hasil identik (`supabase/tests/parity.test.ts`).
 
 ## Keputusan default yang dipakai (bisa diubah)
 
@@ -56,7 +58,7 @@ Tes database memastikan antara lain:
 | --- | --- | --- |
 | Ambang tahap Bloom | 1 / 5 / 12 / 25 / 45 hari peduli | `src/domain/bloom.ts` **dan** `bloom_stage_for` di migrasi |
 | Mode kembali | setelah 4 hari tanpa Care Moment | `src/domain/dayMode.ts` dan `_app_open` di migrasi |
-| Duplikat | pilar sama dalam 30 menit | `src/domain/careMoment.ts` dan `_record_care_moment` |
+| Duplikat | pilar sama, selisih kurang dari 30 menit (dua arah) | `src/domain/careMoment.ts` dan `_record_care_moment` |
 | Batas aman target berat | IMT 18,5 | `src/domain/safety.ts` |
 | Setelah Rimbun | Bloom tetap Rimbun | belum dibangun |
 | Teman AI | UI dan fungsi server tersedia; perlu aktivasi | AI_SETUP.md |

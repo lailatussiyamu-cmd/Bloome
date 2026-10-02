@@ -159,3 +159,37 @@ describe('privacy', () => {
     expect(grants).toEqual({ can_read: false, can_call: false });
   });
 });
+
+describe('time zone changes', () => {
+  const T = '33333333-3333-3333-3333-333333333333';
+  const onboard = (tz: string, iso: string) => q(`select public._complete_onboarding($1, $2::jsonb, $3)`, [
+    T, JSON.stringify({ nickname: 'Tz', birth_date: '1990-01-01', goal: 'energy', activity: 'none', frequency: 'rarely', time_zone: tz }), iso]);
+  const careAt = async (pillar: string, iso: string) =>
+    (await q<{ r: Record<string, unknown> }>(`select public._record_care_moment($1, $2::public.pillar, 'manual', $3) as r`, [T, pillar, iso]))[0].r;
+  const days = async () => (await q<{ n: number; d: string }>(
+    `select care_days_total as n, last_care_day::text as d from public.bloom_state where user_id = $1`, [T]))[0];
+
+  it('switching west-to-east cannot add a second care day within minutes', async () => {
+    await q(`insert into auth.users values ($1)`, [T]);
+    await onboard('Pacific/Pago_Pago', '2026-10-01T02:00:00Z');           // 30 Sep, 15:00 local
+    await careAt('hydrate', '2026-10-01T02:00:00Z');
+    await onboard('Pacific/Kiritimati', '2026-10-01T02:30:00Z');          // now 1 Oct, 16:30 local
+    const r = await careAt('mind', '2026-10-01T02:40:00Z');
+    expect(r).toMatchObject({ recorded: true, stage_advanced: false });
+    expect(await days()).toEqual({ n: 1, d: '2026-10-01' });
+  });
+
+  it('still counts the next real day in the new zone, and never lowers anything', async () => {
+    const r = await careAt('mind', '2026-10-01T12:00:00Z');                // 2 Oct, 02:00 Kiritimati
+    expect(r).toMatchObject({ recorded: true });
+    expect(await days()).toEqual({ n: 2, d: '2026-10-02' });
+    await onboard('Pacific/Pago_Pago', '2026-10-01T12:30:00Z');           // east-to-west: no rewind
+    expect(await days()).toEqual({ n: 2, d: '2026-10-02' });
+  });
+
+  it('rejects an unknown time zone without writing anything', async () => {
+    await expect(onboard('Mars/Olympus', '2026-10-01T13:00:00Z')).rejects.toThrow();
+    const [p] = await q<{ time_zone: string }>(`select time_zone from public.profiles where user_id = $1`, [T]);
+    expect(p.time_zone).toBe('Pacific/Pago_Pago');
+  });
+});

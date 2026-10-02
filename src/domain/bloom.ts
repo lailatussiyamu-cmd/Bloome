@@ -92,6 +92,22 @@ export function applyCareMoment(prev: BloomState, localDate: string): CareDayRes
   return { state, countedAsNewCareDay: true, stageAdvanced: canAdvance };
 }
 
+/**
+ * The user changed time zone. Re-read the last care day in the new zone so that a
+ * west-to-east jump cannot turn "the same moment" into a new calendar day.
+ * Forward only: `lastCareDay` never moves back and nothing else changes.
+ * Mirrors the time-zone branch of `_complete_onboarding` in the migrations.
+ */
+export function rebaseForTimeZone(
+  prev: BloomState,
+  latestMomentAt: string | null,
+  toLocalDate: (at: Date) => string,
+): BloomState {
+  if (prev.lastCareDay === null || latestMomentAt === null) return prev;
+  const reread = toLocalDate(new Date(latestMomentAt));
+  return reread > prev.lastCareDay ? { ...prev, lastCareDay: reread } : prev;
+}
+
 /** What the UI is allowed to see. */
 export interface PublicBloom {
   stage: BloomStage;
