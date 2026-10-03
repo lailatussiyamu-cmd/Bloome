@@ -53,6 +53,7 @@ export default function Account() {
   return (
     <Screen>
       <Title>Akun & privasi</Title>
+      <Button variant="ghost" title="Koneksi kesehatan & GPS" onPress={() => router.push('/connections')} />
       <Body muted>Datamu milikmu. Kamu bisa membawanya, membatasi penggunaannya, atau menghapusnya.</Body>
 
       <Card>

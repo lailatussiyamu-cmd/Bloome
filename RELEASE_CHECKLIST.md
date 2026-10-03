@@ -10,7 +10,7 @@ Status per 2 Oktober 2026. ✅ = sudah di kode dan teruji otomatis. ☐ = harus 
 - ✅ Ekspor data dan hapus akun di dalam app (wajib App Store & Google Play).
 - ✅ Build rilis menolak berjalan tanpa Supabase; Android backup dimatikan untuk data kesehatan.
 - ✅ Sesi berakhir → kembali ke halaman masuk.
-- ✅ CI GitHub Actions: typecheck, lint, 93 tes di setiap PR.
+- ✅ CI GitHub Actions: typecheck, lint, 99 tes di setiap PR.
 
 ## Harus kamu lakukan sebelum rilis
 - ✅ Migrasi readiness dan kedua Edge Function telah diterapkan; AI masih menunggu API key dan uji sesi nyata (lihat SUPABASE_DEPLOYMENT.md).
@@ -29,4 +29,9 @@ Status per 2 Oktober 2026. ✅ = sudah di kode dan teruji otomatis. ☐ = harus 
 - Pemantauan error (mis. Sentry) supaya crash di HP pengguna terlihat.
 - Simpan sesi login di penyimpanan terenkripsi (expo-secure-store) alih-alih AsyncStorage.
 - RPC `today_snapshot()` agar layar Today cukup satu permintaan (sekarang lima).
+
+
+## Integrasi perangkat awal
+- Implementasi baca langkah dan lokasi foreground tersedia; lihat DEVICE_INTEGRATIONS.md.
+- Verifikasi di perangkat, audit dependensi, dan kebijakan privasi masih menjadi syarat rilis.
 
