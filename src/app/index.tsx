@@ -1,9 +1,10 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator } from 'react-native';
+import { ActivityIndicator, Platform } from 'react-native';
 import { Body, Button, Screen } from '../components/ui';
 import { useApi } from '../lib/BloomeContext';
 import { getSupabase } from '../lib/supabase';
+import { readLoginSession } from '../lib/loginFlow';
 
 /** Decides where the app opens, following the product rules. */
 export default function Gate() {
@@ -13,8 +14,9 @@ export default function Gate() {
   const go = useCallback(async () => {
       const sb = getSupabase();
       if (sb) {
-        const { data } = await sb.auth.getSession();
-        if (!data.session) return router.replace('/sign-in');
+        const callbackAttempt = Platform.OS === 'web' && /[?&#](code|error|error_description|error_code|access_token)=/.test(window.location.href);
+        const session = await readLoginSession(sb.auth, callbackAttempt);
+        if (!session) return router.replace('/sign-in');
       }
       const open = await api.appOpen();
       if (!open.onboarded) return router.replace('/onboarding');
@@ -37,6 +39,7 @@ export default function Gate() {
         <>
           <Body>Belum bisa membuka Bloome: {error}</Body>
           <Button title="Coba lagi" onPress={() => { setError(null); void go().catch(showError); }} />
+          <Button title="Kembali ke login" variant="ghost" onPress={() => router.replace('/sign-in')} />
         </>
       ) : (
         <ActivityIndicator accessibilityLabel="Memuat" style={{ marginTop: 80 }} />
