@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
+import { Platform } from 'react-native';
 import { Body, Button, Field, Screen, Title } from '../components/ui';
 import { getSupabase } from '../lib/supabase';
 import { withDeadline } from '../lib/requestTimeout';
@@ -9,6 +10,7 @@ export default function SignIn() {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
+  const [useCode, setUseCode] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const sb = getSupabase();
@@ -17,10 +19,10 @@ export default function SignIn() {
     if (!sb || busy) return;
     setBusy(true); setMsg(null);
     try {
-    const { error } = await withDeadline(sb.auth.signInWithOtp({ email: email.trim() }));
+    const { error } = await withDeadline(sb.auth.signInWithOtp({ email: email.trim(), options: Platform.OS === 'web' ? { emailRedirectTo: window.location.origin + '/' } : undefined }));
     if (error) return setMsg(error.message);
     setSent(true);
-    setMsg('Kode sudah dikirim ke emailmu.');
+    setMsg('Periksa email terbaru dari Bloome. Jika berisi link, buka link di browser yang sama dengan halaman ini. Jika berisi kode, pilih Masukkan kode.');
     } catch { setMsg('Permintaan terlalu lama atau koneksi terputus. Pengiriman belum dapat dipastikan. Cek inbox sebelum mencoba lagi.'); }
     finally { setBusy(false); }
   };
@@ -42,10 +44,11 @@ export default function SignIn() {
     <Screen>
       <Title>Masuk ke Bloome</Title>
       <Field label="Email" value={email} onChangeText={setEmail} editable={!busy && !sent} keyboardType="email-address" autoCapitalize="none" autoComplete="email" />
-      {sent && <Field label="Kode dari email" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" />}
+      {sent && useCode && <Field label="Kode dari email" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" />}
       {msg && <Body muted>{msg}</Body>}
-      {sent ? <Button title={busy ? 'Memeriksa…' : 'Masuk'} onPress={verify} disabled={busy || code.length < 6} /> : <Button title={busy ? 'Mengirim…' : 'Kirim kode'} onPress={send} disabled={busy || !email.includes('@')} />}
-      {sent && <Button title="Ubah email / kirim ulang" variant="ghost" disabled={busy} onPress={() => { setSent(false); setCode(''); setMsg(null); }} />}
+      {sent && !useCode && <Button title="Masukkan kode dari email" variant="ghost" onPress={() => setUseCode(true)} />}
+      {sent ? (useCode ? <Button title={busy ? 'Memeriksa…' : 'Masuk'} onPress={verify} disabled={busy || code.length < 6} /> : null) : <Button title={busy ? 'Mengirim…' : 'Kirim email masuk'} onPress={send} disabled={busy || !email.includes('@')} />}
+      {sent && <Button title="Ubah email / kirim ulang" variant="ghost" disabled={busy} onPress={() => { setSent(false); setUseCode(false); setCode(''); setMsg(null); }} />}
     </Screen>
   );
 }

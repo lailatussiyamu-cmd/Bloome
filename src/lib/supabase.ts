@@ -1,4 +1,5 @@
 import 'react-native-url-polyfill/auto';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { timedFetch } from './requestTimeout';
@@ -14,7 +15,7 @@ export function getSupabase(): SupabaseClient | null {
   if (!client) {
     client = createClient(url, anonKey, {
       global: { fetch: timedFetch },
-      auth: { storage: AsyncStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+      auth: { storage: AsyncStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: Platform.OS === 'web', flowType: Platform.OS === 'web' ? 'pkce' : 'implicit' },
     });
   }
   return client;

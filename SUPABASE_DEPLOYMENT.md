@@ -32,3 +32,11 @@ This installs the database only. App environment configuration, email authentica
 - Penghapusan akun nyata tidak dilakukan. Tes konfirmasi hapus produksi ditolak automatic approval review; pengujian destruktif tetap memakai mock/unit tests.
 - Riwayat migrasi CLI belum direkonsiliasi. Jangan menjalankan db push tanpa rekonsiliasi.
 
+
+## Login web — 3 Oktober 2026
+- Dashboard Free/default mail saat ini menolak pengeditan template tanpa SMTP sendiri atau upgrade. Template bawaan mengirim magic link.
+- Login web sekarang menggunakan PKCE dan detectSessionInUrl; signInWithOtp mengirim emailRedirectTo sesuai origin web + `/`.
+- Redirect persis `http://localhost:8081/` sudah ditambahkan setelah persetujuan pengguna. Site URL lama tidak diubah.
+- Minta email baru setelah perubahan. Buka link di browser/origin yang sama; verifier PKCE tersimpan di browser tersebut. Jangan bagikan link login.
+- Kolom kode tetap tersedia bila template SMTP kelak mengirim OTP. Native masih membutuhkan template OTP atau implementasi callback deep link sebelum rilis.
+- Keberhasilan login end-to-end menunggu pengguna membuka email; tidak ada OTP atau token pengguna yang dibaca agent.
